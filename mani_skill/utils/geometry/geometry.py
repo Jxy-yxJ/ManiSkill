@@ -6,6 +6,8 @@ from scipy.spatial.transform import Rotation
 
 from mani_skill.utils.geometry.bounding_cylinder import aabc
 
+_EPS = 1e-8
+
 
 def sample_on_unit_sphere(rng):
     """
@@ -31,21 +33,37 @@ def sample_on_unit_circle(rng):
     return v
 
 
+def _normalize_vec(v):
+    """Return @v scaled to unit length, raising if @v has (near) zero length."""
+    norm = np.linalg.norm(v)
+    if norm < _EPS:
+        raise ValueError("Cannot compute an angle involving a zero-length vector")
+    return v / norm
+
+
 def rotation_between_vec(a, b):  # from a to b
-    a = a / np.linalg.norm(a)
-    b = b / np.linalg.norm(b)
+    a = _normalize_vec(a)
+    b = _normalize_vec(b)
+    dot = np.clip(np.dot(a, b), -1.0, 1.0)
     axis = np.cross(a, b)
-    axis = axis / np.linalg.norm(axis)  # norm might be 0
-    angle = np.arccos(a @ b)
-    R = Rotation.from_rotvec(axis * angle)
-    return R
+    axis_norm = np.linalg.norm(axis)
+    # Parallel and antiparallel pairs have no unique rotation axis.
+    if axis_norm < _EPS:
+        if dot > 0.0:
+            return Rotation.identity()
+        # Antiparallel: rotate pi around any axis perpendicular to @a.
+        helper = np.array([1.0, 0.0, 0.0]) if abs(a[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+        axis = np.cross(a, helper)
+        axis = axis / np.linalg.norm(axis)
+        return Rotation.from_rotvec(axis * np.pi)
+    axis = axis / axis_norm
+    return Rotation.from_rotvec(axis * np.arccos(dot))
 
 
 def angle_between_vec(a, b):  # from a to b
-    a = a / np.linalg.norm(a)
-    b = b / np.linalg.norm(b)
-    angle = np.arccos(a @ b)
-    return angle
+    a = _normalize_vec(a)
+    b = _normalize_vec(b)
+    return np.arccos(np.clip(np.dot(a, b), -1.0, 1.0))
 
 
 def wxyz_to_xyzw(q):
